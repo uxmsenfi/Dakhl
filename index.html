@@ -284,18 +284,42 @@ dialog h2 { font-size: 22px; font-weight: 780; }
 @media (prefers-reduced-motion: no-preference) {
   .btn, .nav-link { transition: background-color .13s ease, color .13s ease; }
 }
+[hidden] { display: none !important; }
+.auth-screen { max-width: 440px; margin: clamp(28px, 12vh, 120px) auto; padding: 20px; }
+.auth-screen .panel { padding: 28px; }
+.auth-screen form { display: grid; gap: 16px; margin-top: 20px; }
+.auth-screen h1 { margin: 0 0 8px; }
+.auth-screen [role="status"]:empty { display: none; }
+.auth-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+#form fieldset { display: contents; }
+.topbar-tools { display: flex; align-items: center; gap: 12px; }
 </style>
 
 </head>
 <body>
-<div class="shell">
+<section class="auth-screen" id="auth-screen" aria-labelledby="auth-heading">
+  <div class="panel">
+    <h1 id="auth-heading">ورود به حساب‌وکتاب</h1>
+    <form id="sign-in" hidden>
+      <label class="field">ایمیل<input type="email" name="email" required autocomplete="username" dir="ltr"></label>
+      <label class="field">رمز عبور<input type="password" name="password" required autocomplete="current-password" dir="ltr"></label>
+      <button class="btn primary" type="submit">ورود</button>
+    </form>
+    <p id="auth-status" class="hint" role="status">در حال بررسی وضعیت ورود…</p>
+    <div class="auth-actions">
+      <button class="btn" type="button" id="retry-ledger" hidden>تلاش دوباره</button>
+      <button class="btn" type="button" id="switch-account" data-sign-out hidden>خروج</button>
+    </div>
+  </div>
+</section>
+<div class="shell" id="ledger-shell" hidden>
 <aside class="sidebar">
   <a class="brand" href="#dashboard"><span class="brand-icon" data-icon="wallet"></span><span>حساب‌وکتاب<small>مدیریت مالی شخصی</small></span></a>
   <nav aria-label="بخش‌ها" id="nav"></nav>
-  <div class="sidebar-bottom"><span data-icon="lock"></span><span>ذخیره در همین مرورگر<small>پشتیبان‌گیری در بخش تنظیمات</small></span></div>
+  <div class="sidebar-bottom"><span data-icon="lock"></span><span>ذخیره در حساب کاربری<small>پشتیبان‌گیری در بخش تنظیمات</small></span></div>
 </aside>
 <main>
-  <header class="topbar"><span id="breadcrumb">داشبورد</span><span id="today"></span></header>
+  <header class="topbar"><span id="breadcrumb">داشبورد</span><div class="topbar-tools"><span id="today"></span><button class="btn" type="button" data-sign-out>خروج</button></div></header>
   <section id="screen" class="screen"></section>
 </main>
 </div>
@@ -360,7 +384,6 @@ const blank = () => ({
   categories:['خوراک','خانه و قبض‌ها','حمل‌ونقل','سلامت','خرید','تفریح','سایر'].map((name,index)=>({id:'preset-'+index,name,nature:'unrated'}))
 });
 let state = blank();
-let storageIssue = '';
 let page = '';
 let period = 'month';
 let custom = {from:thisMonth(),to:today()};
@@ -384,13 +407,6 @@ const message = (text) => {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(()=>$('#toast').textContent='',4200);
 };
-function commit(next) {
-  validate(next);
-  try { localStorage.setItem(key,JSON.stringify(next)); }
-  catch { throw Error('ذخیره انجام نشد. دسترسی مرورگر و فضای ذخیره‌سازی را بررسی کنید.'); }
-  state = next;
-  storageIssue = '';
-}
 const whole = (value) => Number.isSafeInteger(value) && Math.abs(value)<=1e12;
 const validDate = (date) => typeof date==='string' && /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(asDate(date).getTime()) && asDate(date).toISOString().slice(0,10)===date;
 function validate(data) {
@@ -538,16 +554,18 @@ function reportsPage() {
 function settingsPage() {
   return intro('تنظیمات','پشتیبان‌گیری و بازیابی اطلاعات مالی.')+
     '<div class="grid">'+panel('دانلود نسخه پشتیبان','<p class="hint">از حساب‌ها، دسته‌ها، تراکنش‌ها و بدهی‌ها یک فایل JSON کامل دانلود کنید.</p>',button('دانلود پشتیبان','backup',{symbol:'download'}))+
-    panel('بازیابی نسخه پشتیبان','<p class="hint">بازیابی، اطلاعات فعلی این مرورگر را با محتویات فایل جایگزین می‌کند.</p>',button('انتخاب فایل','restore'))+'</div>';
+    panel('بازیابی نسخه پشتیبان','<p class="hint">بازیابی، اطلاعات فعلی حساب را با محتویات فایل جایگزین می‌کند.</p>',button('انتخاب فایل','restore'))+
+    (browserBackup ? panel('انتقال اطلاعات از این مرورگر','<p class="hint">اطلاعات نسخه قبلی در این مرورگر پیدا شد.</p>',button('انتقال به حساب','import-browser')) : '')+'</div>';
 }
 const screens = {dashboard,transactions:transactionsPage,accounts:accountsPage,debts:debtsPage,categories:categoriesPage,reports:reportsPage,settings:settingsPage};
 function render() {
+  if (!ledgerReady) return;
   page = location.hash.slice(1);
   if (!Object.hasOwn(sections,page)) page = 'dashboard';
   $('#nav').innerHTML = Object.entries(sections).map(([slug,[label,symbol]])=>'<a class="nav-link" href="#'+slug+'"'+(slug===page?' aria-current="page"':'')+'>'+icon(symbol)+label+'</a>').join('');
   $('#breadcrumb').textContent = sections[page][0];
   $('#today').textContent = fullDate.format(new Date());
-  $('#screen').innerHTML = (storageIssue?'<p class="form-error" role="alert">'+escape(storageIssue)+'</p>':'')+screens[page]();
+  $('#screen').innerHTML = screens[page]();
   if ($('#period')) $('#period').value = period;
 }
 const field = (label,control,wide=false) => '<label class="field'+(wide?' wide':'')+'">'+label+control+'</label>';
@@ -581,7 +599,7 @@ function dialogForm(action,itemId) {
       field('تاریخ',dateInput('date',item?.date??today(),true))+field('حساب',select('account',options(state.accounts,item?.account??(state.accounts.length===1?state.accounts[0].id:''))))+
       '<div class="field wide" id="dependent"></div>'+field('یادداشت (اختیاری)','<textarea name="note" maxlength="250">'+escape(item?.note)+'</textarea>',true);
   }
-  $('#form').innerHTML = '<div class="form-grid">'+fields+'</div><p class="form-error" id="form-error" role="alert"></p><div class="form-actions">'+(item?button('حذف','delete',{style:'danger'}):'')+button('انصراف','close')+'<button class="btn primary" type="submit">ذخیره</button></div>';
+  $('#form').innerHTML = '<fieldset><div class="form-grid">'+fields+'</div><p class="form-error" id="form-error" role="alert"></p><div class="form-actions">'+(item?button('حذف','delete',{style:'danger'}):'')+button('انصراف','close')+'<button class="btn primary" type="submit">ذخیره</button></div></fieldset>';
   if (kind==='transaction') dependentFields();
   dialog.showModal();
 }
@@ -603,8 +621,9 @@ function parseAmount(value,{allowZero=false,negative=false}={}) {
   if (!/^-?\d+$/.test(raw) || !whole(parsed) || (!negative && parsed<0) || (!allowZero && parsed===0)) throw Error('مبلغ را به‌صورت عدد صحیح و در محدوده یک تریلیون تومان وارد کنید.');
   return parsed;
 }
-function saveForm(event) {
+async function saveForm(event) {
   event.preventDefault();
+  if (!activeForm || !ledgerReady || pendingSave) return;
   const {kind,item,collection,linkedDebt} = activeForm;
   const fields = new FormData(event.target);
   const value = (name) => String(fields.get(name)??'').trim();
@@ -631,13 +650,17 @@ function saveForm(event) {
       }
     }
     const next = {...state,[collection]:item?state[collection].map(old=>old.id===entry.id?entry:old):[...state[collection],entry]};
-    commit(next);
+    if (!await commit(next)) return;
     $('#dialog').close();
     render();
     message('ذخیره شد.');
-  } catch (error) { $('#form-error').textContent = error.message; }
+  } catch (error) {
+    const formError = $('#form-error');
+    if (formError) formError.textContent = error.message;
+  }
 }
-function deleteItem() {
+async function deleteItem() {
+  if (pendingSave) return;
   const {kind,item,collection} = activeForm;
   const linked = state.transactions.some(tx=>(kind==='account'&&(tx.account===item.id||tx.to===item.id))||(kind==='category'&&tx.category===item.id)||(kind==='debt'&&tx.debt===item.id));
   if (linked) {
@@ -646,11 +669,14 @@ function deleteItem() {
   }
   if (!confirm('این مورد حذف شود؟')) return;
   try {
-    commit({...state,[collection]:state[collection].filter(old=>old.id!==item.id)});
+    if (!await commit({...state,[collection]:state[collection].filter(old=>old.id!==item.id)})) return;
     $('#dialog').close();
     render();
     message('حذف شد.');
-  } catch (error) { $('#form-error').textContent = error.message; }
+  } catch (error) {
+    const formError = $('#form-error');
+    if (formError) formError.textContent = error.message;
+  }
 }
 function download(filename,contents,type) {
   const url = URL.createObjectURL(new Blob([contents],{type}));
@@ -681,26 +707,24 @@ function exportReport() {
   download('hesab-ketab-report-'+today()+'.csv','\uFEFF'+lines.map(row=>row.map(csvCell).join(',')).join('\r\n'),'text/csv;charset=utf-8');
 }
 $('#form').addEventListener('submit',saveForm);
-window.addEventListener('hashchange',render);
-window.addEventListener('storage',event=>{
-  if (event.key!==key) return;
-  try {
-    state = event.newValue ? validate(JSON.parse(event.newValue)) : blank();
-    if ($('#dialog').open) {
-      $('#dialog').close();
-      message('داده‌ها در یک برگه دیگر تغییر کردند. فرم را دوباره باز کنید.');
-    }
-    render();
-  } catch { message('خواندن به‌روزرسانی داده‌ها ممکن نبود.'); }
+$('#dialog').addEventListener('cancel',event=>{
+  if (pendingSave) event.preventDefault();
 });
+window.addEventListener('hashchange',render);
 document.addEventListener('click',event=>{
   const target = event.target.closest('button[data-action]');
-  if (!target) return;
+  if (!target || !ledgerReady || pendingSave) return;
   const {action,id:itemId} = target.dataset;
   if (action==='close') return $('#dialog').close();
   if (action==='delete') return deleteItem();
   if (action==='export') return exportReport();
   if (action==='backup') return download('hesab-ketab-backup-'+today()+'.json',JSON.stringify(state,null,2),'application/json');
+  if (action==='import-browser') {
+    if (browserBackup && confirm('اطلاعات این مرورگر به حساب شما منتقل شود؟')) {
+      void restoreBackup(browserBackup);
+    }
+    return;
+  }
   if (action==='restore') return $('#restore-file').click();
   if ((action==='transaction'||action==='payment') && !state.accounts.length) {
     location.hash = '#accounts';
@@ -719,28 +743,37 @@ document.addEventListener('change',event=>{
   else return;
   render();
 });
-$('#restore-file').addEventListener('change',async(event)=>{
-  const file = event.target.files[0];
-  event.target.value = '';
-  if (!file) return;
+async function restoreBackup(data) {
   try {
-    if (file.size>8*1024*1024) throw Error('حجم فایل پشتیبان بیش از حد است.');
-    const data = validate(JSON.parse(await file.text()));
-    if (!confirm('اطلاعات فعلی با نسخه پشتیبان جایگزین شود؟')) return;
-    commit(data);
+    if (!await commit(data)) return;
     txFilter = {type:'',category:'',account:''};
     render();
     message('پشتیبان بازیابی شد.');
-  } catch (error) { message(error instanceof SyntaxError?'فایل JSON معتبر نیست.':error.message); }
-});
-try {
-  const raw = localStorage.getItem(key);
-  if (raw) state = validate(JSON.parse(raw));
-} catch {
-  storageIssue = 'خواندن داده‌ها یا دسترسی به فضای ذخیره‌سازی مرورگر ممکن نبود.';
+  } catch (error) { message(error.message); }
 }
+$('#restore-file').addEventListener('change',async(event)=>{
+  const file = event.target.files[0];
+  event.target.value = '';
+  if (!file || !ledgerReady || pendingSave) return;
+  const currentLoad = loadVersion;
+  try {
+    if (file.size>8*1024*1024) throw Error('حجم فایل پشتیبان بیش از حد است.');
+    const contents = await file.text();
+    if (currentLoad !== loadVersion) return;
+    const data = validate(JSON.parse(contents));
+    if (!confirm('اطلاعات فعلی با نسخه پشتیبان جایگزین شود؟')) return;
+    await restoreBackup(data);
+  } catch (error) {
+    if (currentLoad === loadVersion) message(error instanceof SyntaxError?'فایل JSON معتبر نیست.':error.message);
+  }
+});
 for (const element of document.querySelectorAll('[data-icon]')) element.innerHTML = icon(element.dataset.icon);
-render();
+</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.89.0" defer></script>
+<script src="./supabase-config.js" defer></script>
+<script src="./supabase-sync.js" defer></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => startSync());
 </script>
 </body>
 </html>
